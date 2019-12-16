@@ -1,0 +1,240 @@
+---
+title: "Analyzing the Revenue of Sports Leagues"
+author: "Yoonjae Lee"
+date: "December 15, 2019"
+output:
+  html_document:
+    df_print: paged
+  fig_width: 10
+  fig_height: 6
+  html_notebook: null
+---
+
+# Sports around the world
+
+Sports is one of the human's longest traditions. Sports has been bringing people together to cheer together and have fun. However, not everyone likes the same kind of sports. In different countries and cultures, people like different sports. 
+
+My goal for this project is to analyze the popularity of these sports around the world.
+
+# "Popularity"
+
+The first question about this project was, what defines "popularity" of sports. There were many factors to consider. Do we compare by each league or a sport as a whole? What is the measure for "popularity"? After considerations, I decided to analyze it in few different aspects
+
+# The Goals
+
+#### 1. Compare the annual revenue of each professional sport leagues in the world
+#### 2. Compare the annual revenue of each sports in the world (professional leagues combined)
+#### 3. Compare the value of each professional sport teams in the world
+
+One of the other goals I considered was analyzing the history of annual revenue of each sports leagues, but it was not possible because a lot of sports league, including NFL, does not have an official history record of the league's revenue.
+
+# Dataset
+
+For #1 and #2, data from https://en.wikipedia.org/wiki/List_of_professional_sports_leagues_by_revenue is going to be used.
+
+For #3. data from https://en.wikipedia.org/wiki/Forbes%27_list_of_the_most_valuable_sports_teams is going to be used.
+
+## Setup
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(mosaic)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(xml2)
+library(rvest)
+```
+
+# 1. The annual revenue of professional sport leagues
+
+## Importing dataset and cleaning it
+```{r}
+page <- "https://en.wikipedia.org/wiki/List_of_professional_sports_leagues_by_revenue"
+tableList <- page %>%
+  read_html() %>%
+  html_nodes(css = "table") %>%
+  html_table(fill = TRUE)
+
+head(tableList[[1]])
+
+allTable <- 
+  tableList[[1]] %>%
+  rename(league = League,
+         sport = Sport,
+         countries = 'Country(ies)',
+         season = Season,
+         level = 'Level on pyramid',
+         teams = 'Teams[a]',
+         revenue = 'Revenue  (€ mil)',
+         ref = 'Ref.') 
+
+footnote <- "\\[.\\]$| \\[.\\]|\\[unreliable source\\?\\]" # A pattern to remove footnotes embbeded in Wikipedia
+
+allSummary <-
+  allTable %>%
+  select(league, sport, countries, revenue) %>%
+  mutate(revenue = gsub(pattern = footnote, replacement = "", revenue)) %>%
+  mutate(revenue = gsub(pattern = ",", replacement = "", revenue)) %>% # removing , in numerals for conversion
+  mutate(sport = gsub(pattern = "Football", replacement = "football", sport)) %>% # correcting consistency
+  mutate(revenue = as.numeric(revenue))
+
+allSummary
+```
+
+There are 92 professional sport leagues. To start with, I created a graph with all 92 leagues.
+
+```{r}
+allSummary %>%
+  ggplot(aes(x = reorder(league, -revenue), y = revenue, fill = sport)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  xlab("Leagues") +
+  ylab("Revenue in Million €")
+```
+
+The graph is very hard to analyze because there are too many leagues. For #1, I deicded to only use top 20 leagues for anlysis because the goal is to find out what the most popular professional sports league in the world is.
+
+```{r}
+allSummary %>%
+  filter( rank(desc(revenue)) <= 20) %>% 
+  ggplot(aes(x = reorder(league, -revenue), y = revenue, fill = sport)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  xlab("Leagues") +
+  ylab("Revenue in Million €")
+```
+
+There are few findings from this graph.
+
+#### 1. NFL is by far the biggest professional sports league in the world.
+#### 2. The second biggest league is MLB, which is also a U.S. league like NFL. U.S. leagues have highest revenue in the world.
+#### 3. Following the two U.S. leagues, Premier League is the third biggest league and the biggest non-U.S. league.
+#### 4. Although a soccer (Association football) league is third biggest, there 11 soccer leagues in top 20. This is far more than American football (NFL only) and Baseball (MLB / NPB) combined.
+
+In conclusion, NFL is the biggest single professional league. However, because there is only one American football league, the next analysis will likely give a different result.
+
+# 2. The annual revenue of each sports (professional leagues combined)
+
+```{r}
+allSports1 <-
+  allSummary %>%
+  select(sport, revenue) %>%
+  group_by(sport) %>%
+  summarise(leagues = n()) %>%
+  arrange( desc(leagues) ) 
+
+allSports1
+```
+
+```{r}
+allSports2 <-
+  allSummary %>%
+  select(sport, revenue) %>%
+  group_by(sport) %>%
+  summarise(total_revenue = sum(revenue)) %>%
+  arrange( desc(total_revenue) ) 
+
+allSports2
+```
+
+For this question, there were two aspects to analyze. One was the number of leagues in a same sport, and total revenue of the sport. The two tables above each summarize total number of leagues and total revenue, respectively.
+
+```{r}
+allSports <-
+  allSports2 %>%
+  left_join(allSports1) %>%
+  mutate(average_revenue = total_revenue/leagues)
+
+allSports
+```
+
+The table above is a joined table, with a new variable which indicates the average league revenue of the sport.
+
+```{r}
+allSports %>%
+  ggplot(aes(x = reorder(sport, -total_revenue), y = total_revenue)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  xlab("Sports") +
+  ylab("Total Revenue in Million €") + 
+  geom_point(aes(y = average_revenue, size = leagues)) +
+  labs(size = "Leagues & Average")
+```
+
+This graph is a visualization of the table above. Y axis of the black dot indicates the average revenue per league and the size (radius) of the dot indicates the number of leagues. The findings are:
+
+#### 1. Soccer (Association football) has the highest revenue by far. It makes more revenue than all other sports combined.
+#### 2. Soccer also has the most number of leagues. It has 60, and the second most is 6 (Basketball and Ice Hockey). Because of this, it has a very low average revenue compared to the total revenue.
+#### 3. Other than soccer, other sports mostly follow the order of the biggest leagues because there are only up to 6 different leagues and most of them have one big league that takes the majority of the sport.
+
+In conclusion, soccer as a sport is marginaly more popular than any other sports in the world.
+
+# 3. The value of each professional sport teams
+
+## Importing a new dataset and cleaning it
+```{r}
+page <- "https://en.wikipedia.org/wiki/Forbes%27_list_of_the_most_valuable_sports_teams"
+tableList2 <- page %>%
+  read_html() %>%
+  html_nodes(css = "table") %>%
+  html_table(fill = TRUE)
+
+head(tableList2[[1]])
+
+teamTable <- 
+  tableList2[[1]] %>%
+  rename(team = Team,
+         sport = Sport,
+         league = League,
+         value = 'Value (USD billion)')
+
+teamSummary <-
+  teamTable %>%
+  select(team, sport, league, value) %>%
+  mutate(value = gsub(pattern = "\\$", replacement = "", value)) %>% # removing $ in numerals for conversion
+  mutate(value = as.numeric(value))
+  
+teamSummary
+```
+
+Here is an imported and cleaned table of value of top 50 professional teams in billion USD. 
+
+```{r}
+teamSummary %>%
+  ggplot(aes(x = reorder(team, -value), y = value, fill = sport)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  xlab("Teams") +
+  ylab("Revenue in Billion USD")
+```
+
+Like the first graph of the first question, having all 50 teams in one graph is not too clear.
+
+```{r}
+teamSummary %>%
+  filter( rank(desc(value)) <= 20) %>% 
+  ggplot(aes(x = reorder(team, -value), y = value, fill = sport, shape = league)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  xlab("Teams") +
+  ylab("Revenue in Billion USD") +
+  geom_point()
+```
+
+This one includes only top 20 teams, and has a shape indicating which league the teams belongs in. Here are few reamrks:
+
+#### 1. The top 2 valuable teams are from top 2 revenue sports in the same order. Dallas Cowboys belongs to NFL and New York Yankees belongs to MLB. Real Madrid, the 3rd most valuable team, is in the same sport as EPL (the 3rd highest revenue league), but not the same league.
+#### 2. There are only 4 different sports in top 50.
+#### 3. The top 50 graph mostly contains NFL teams. However, the top 20 graph is rather well mixed between Football, Soccer, Baseball, and Basketball.
+
+
+In conclusion, NFL teams in average have a high value because NFL makes the most revenue. Football, Soccer, Baseball, and Basketball all have high value teams.
+
+
+# Final Conclusion
+
+Looking at several different perspectives, the conclusions were not the same. However, there are few common points which can be summarized into a conclusion.
+
+### 1. NFL is the most popular league in the world.
+### 2. Soccer is the most popular sports in the world.
+### 3. The Top 4 major sports in the world are Football, Soccer, Baseball, and Basketball.
+
